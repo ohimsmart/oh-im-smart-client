@@ -3,7 +3,18 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const pad = n => String(n).padStart(2, '0');
-const WEEK = UII18n.t("日一二三四五六");
+const WEEK = '日一二三四五六';   // Chinese weekday characters by getDay() (both scripts write them the same)
+// 11月14日 星期五 in Chinese, Friday, November 14 in English (word order differs: no fragments)
+function longDate(d, gap = ' ') {
+  return UII18n.applied === 'en' ? d.toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' })
+    : `${d.getMonth() + 1}月${d.getDate()}日${gap}星期${WEEK[d.getDay()]}`;
+}
+// an alarm's weekly days: 1 is Monday … 7 is Sunday
+function weekdayName(day) {
+  return UII18n.applied === 'en' ? new Date(2024, 0, day).toLocaleDateString('en', { weekday: 'short' }) : WEEK[day % 7];
+}
+// what a backend answer says went wrong: its {msg_key, msg_params}, else its error text, else ours
+const reason = (r, fallback) => (r && (r.msg_key ? r : r.error)) || fallback;
 const DEMO = new URLSearchParams(location.search).get('demo');   // null when not a demo
 if (DEMO !== null && /[?&]still\b/.test(location.search)) document.documentElement.classList.add('still');
 
@@ -29,7 +40,7 @@ function tick() {
   const hm = pad(now.getHours()) + ':' + pad(now.getMinutes());
   $('time').textContent = hm;
   $('bigTime').textContent = hm;
-  $('bigDate').textContent = `${now.getMonth() + 1}${UII18n.t("月")}${now.getDate()}${UII18n.t("日  星期")}${WEEK[now.getDay()]}`;
+  $('bigDate').textContent = longDate(now, '  ');
   const h = now.getHours();
   $('greet').textContent = h < 5 ? UII18n.t("夜深了") : h < 9 ? UII18n.t("早上好") : h < 12 ? UII18n.t("上午好") : h < 14 ? UII18n.t("中午好") : h < 18 ? UII18n.t("下午好") : h < 23 ? UII18n.t("晚上好") : UII18n.t("夜深了");
   $('ringTime').textContent = hm;
@@ -195,7 +206,7 @@ function renderStatus() {
     idle: [UII18n.t("说<em>「小麦小麦」</em>"), connected ? UII18n.t("对话还在，唤醒后可以接着聊") : UII18n.t("或者点麦克风；按住可以直接说")],
     connecting: [UII18n.t("正在连接…"), UII18n.t("连上小智网关后就开始听")],
     listening: ui.ptt ? [UII18n.t("松开<em>发送</em>"), UII18n.t("说完松开手指")] : [UII18n.t("我在听"), UII18n.t("说完停一下，我就开始回答")],
-    thinking: [`<em>${esc(modelName())}</em> ${UII18n.t("正在思考")}`, UII18n.t("复杂的问题可能要想一会儿")],
+    thinking: [UII18n.t("{name} 正在思考", { name: `<em>${esc(modelName())}</em>` }), UII18n.t("复杂的问题可能要想一会儿")],
     speaking: [UII18n.t("正在回答"), UII18n.t("喊「小麦小麦」或点打断就能停下")],
   }[shown] || ['', ''];
   if (ui.status.recognising && !ui.ptt) text.splice(0, 2, UII18n.t("正在识别"), UII18n.t("你说完了，正在把话转成文字"));
@@ -205,7 +216,7 @@ function renderStatus() {
   const sleeping = !!(ui.status.sleep && ui.status.sleep.active);
   document.body.classList.toggle('has-reports', reports > 0);
   document.body.classList.toggle('sleeping', sleeping);
-  $('reportText').textContent = reports > 1 ? `${UII18n.t("有")} ${reports} ${UII18n.t("条待汇报")}` : UII18n.t("有一条待汇报");
+  $('reportText').textContent = reports > 1 ? UII18n.t("有 {n} 条待汇报", { n: reports }) : UII18n.t("有一条待汇报");
   if (micOff && shown === 'idle') text.splice(0, 2, UII18n.t("麦克风已关"), UII18n.t("拨开机身侧面的开关就能说话"));
   else if (reports && shown === 'idle') text[1] = UII18n.t("有待汇报：点右上角收听，或叫一声「小麦小麦」");
   else if (sleeping && shown === 'idle' && !connected) text[1] = UII18n.t("睡眠时段：汇报不会自动念");
@@ -271,7 +282,7 @@ async function switchModel(m) {
   try {
     const r = await (await fetch('/api/model', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                                  body: JSON.stringify({ kind: m.kind, vendor: m.vendor, entry: m.entry }) })).json();
-    if (r.ok === false) error = r.error || UII18n.t("切换失败");
+    if (r.ok === false) error = reason(r, UII18n.t("切换失败"));
   } catch (e) {
     error = UII18n.t("切换失败：客户端没有响应");
   }
@@ -296,7 +307,7 @@ function renderSettings() {
   $('sleepStart').textContent = s.start;
   $('sleepEnd').textContent = s.end;
   $('sleepNote').textContent = !s.enabled ? UII18n.t("睡眠时段已关闭：补报一到就念，音量和亮度照常")
-    : s.active ? `${UII18n.t("现在是睡眠时段，到")} ${s.end} ${UII18n.t("结束")}` : `${UII18n.t("每天")} ${s.start} ${UII18n.t("到")} ${s.end} ${UII18n.t("是睡眠时段，现在不在")}`;
+    : s.active ? UII18n.t("现在是睡眠时段，到 {end} 结束", { end: s.end }) : UII18n.t("每天 {start} 到 {end} 是睡眠时段，现在不在", { start: s.start, end: s.end });
 }
 function sendSleep(changes, delay) {
   Object.assign(sleepEdit, changes);
@@ -308,7 +319,7 @@ function sendSleep(changes, delay) {
     try {
       const r = await (await fetch('/api/sleep', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                                    body: JSON.stringify(body) })).json();
-      if (r.ok === false) toast(r.error || UII18n.t("没保存上"), 'error');
+      if (r.ok === false) toast(reason(r, UII18n.t("没保存上")), 'error');
     } catch (e) {
       toast(UII18n.t("没保存上：客户端没有响应"), 'error');
     }
@@ -345,7 +356,7 @@ async function sendBright(body) {
   try {
     const r = await (await fetch('/api/brightness', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                                        body: JSON.stringify(body) })).json();
-    if (r.ok === false) toast(r.error || UII18n.t("没保存上"), 'error');
+    if (r.ok === false) toast(reason(r, UII18n.t("没保存上")), 'error');
   } catch (e) {
     toast(UII18n.t("没保存上：客户端没有响应"), 'error');
   }
@@ -401,7 +412,7 @@ async function sendScreenOff(changes) {
   try {
     const r = await (await fetch('/api/screen-off', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                                       body: JSON.stringify(changes) })).json();
-    if (r.ok === false) toast(r.error || UII18n.t("没保存上"), 'error');
+    if (r.ok === false) toast(reason(r, UII18n.t("没保存上")), 'error');
   } catch (e) {
     toast(UII18n.t("没保存上：客户端没有响应"), 'error');
   }
@@ -455,7 +466,7 @@ async function postJson(path, body) {
   try {
     const r = await (await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                          body: JSON.stringify(body || {}) })).json();
-    if (r.ok === false) toast(r.error || UII18n.t("没保存上"), 'error');
+    if (r.ok === false) toast(reason(r, UII18n.t("没保存上")), 'error');
     return r;
   } catch (e) {
     toast(UII18n.t("没保存上：客户端没有响应"), 'error');
@@ -469,6 +480,7 @@ const renderAlarmVol = slider('alarmVolRange', 'alarmVolNum', () => ui.alarms.vo
 
 /* ---- countdowns, alarms and reminders (alarms.py: the client keeps and rings them) ---- */
 const KIND_ICON = { timer: UII18n.t("计时"), alarm: UII18n.t("闹钟"), reminder: UII18n.t("提醒") };
+const KIND_NAME = { timer: UII18n.t("倒计时"), alarm: UII18n.t("闹钟"), reminder: UII18n.t("提醒") };
 const now_s = () => Date.now() / 1000;
 function hhmm(t) {
   const d = new Date(t * 1000);
@@ -478,7 +490,7 @@ function dayText(t) {
   const d = new Date(t * 1000), today = new Date();
   today.setHours(0, 0, 0, 0);
   const days = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - today) / 86400000);
-  return { '-1': UII18n.t("昨天"), 0: UII18n.t("今天"), 1: UII18n.t("明天"), 2: UII18n.t("后天") }[days] || `${d.getMonth() + 1}${UII18n.t("月")}${d.getDate()}${UII18n.t("日 星期")}${WEEK[d.getDay()]}`;
+  return { '-1': UII18n.t("昨天"), 0: UII18n.t("今天"), 1: UII18n.t("明天"), 2: UII18n.t("后天") }[days] || longDate(d);
 }
 function left(t) {
   const s = Math.max(0, Math.round(t - now_s()));
@@ -488,13 +500,20 @@ function left(t) {
 function alarmRow(v) {
   if (v.kind === 'timer') {
     return [`<span data-left="${v.at}">${left(v.at)}</span>${v.label ? ' ' + esc(v.label) : ''}`,
-            `${UII18n.t("倒计时，")}${hhmm(v.at)} ${UII18n.t("响")}${v.snoozed ? UII18n.t(" · 再睡中") : ''}`];
+            `${UII18n.t("倒计时，{time} 响", { time: hhmm(v.at) })}${v.snoozed ? UII18n.t(" · 再睡中") : ''}`];
   }
   const sub = [dayText(v.at)];
-  if (v.repeat) sub.push(esc(v.repeat));
+  if (v.rule) sub.push(repeatText(v.rule));
   if (v.snoozed) sub.push(UII18n.t("再睡中"));
   if (v.kind === 'reminder') sub.push(v.spoken ? UII18n.t("到点念出来") : v.spoken === false ? UII18n.t("只响铃（没合成出语音）") : UII18n.t("正在合成语音"));
   return [`${hhmm(v.at)}${v.label ? ' ' + esc(v.label) : ''}`, sub.join(' · ')];
+}
+// the repeat rule as the alarm list shows it (alarms.py view()'s rule)
+function repeatText(rule) {
+  if (rule.type === 'daily') return UII18n.t("每天");
+  if (rule.type === 'workdays') return UII18n.t("每个工作日（周一到周五）");
+  if (rule.type === 'weekly') return UII18n.t("每周{days}", { days: (rule.days || []).map(weekdayName).join(UII18n.t("、")) });
+  return UII18n.t("每月 {day} 号", { day: rule.day }) + (rule.day > 28 ? UII18n.t("（没有这一天的月份在最后一天）") : '');
 }
 function renderAlarms() {
   const a = ui.alarms;
@@ -516,13 +535,13 @@ function renderAlarms() {
       `<button class="al-del" data-id="${v.id}">${UII18n.t("删除")}</button></div>`;
   }).join('') : UII18n.t("<div class=\"alarm-empty\">还没有闹钟和提醒</div>");
   $('tones').innerHTML = Object.entries(a.tones || {}).map(([k, name]) =>
-    `<button data-tone="${esc(k)}" class="${k === a.tone ? 'on' : ''}">${esc(name)}</button>`).join('');
+    `<button data-tone="${esc(k)}" class="${k === a.tone ? 'on' : ''}">${esc(UII18n.t(name))}</button>`).join('');
   // home: the missed ones (newest first, at most 3 shown) until 知道了
   $('missedBox').hidden = !a.missed.length;
   $('missedList').innerHTML = a.missed.slice(0, 3).map(m =>
     `<div class="mh"><b>${dayText(m.at)} ${hhmm(m.at)}</b>${KIND_ICON[m.kind] || ''}${m.label ? ' · ' + esc(m.label) : ''}` +
     `<small>${m.why === 'off' ? UII18n.t("设备关着") : m.kind === 'reminder' ? UII18n.t("提醒了 3 分钟没人停") : UII18n.t("响了 10 分钟没人停")}</small></div>`).join('') +
-    (a.missed.length > 3 ? `<div class="mh more">${UII18n.t("还有")} ${a.missed.length - 3} ${UII18n.t("条")}</div>` : '');
+    (a.missed.length > 3 ? `<div class="mh more">${UII18n.t("还有 {n} 条", { n: a.missed.length - 3 })}</div>` : '');
   renderAlarmVol();
   renderRing();
   tickAlarms();
@@ -531,9 +550,9 @@ function renderRing() {
   const r = ui.alarms.ringing;
   if (!r) return;
   const items = r.items || [];
-  $('ringKind').textContent = [...new Set(items.map(v => v.type))].join('、') || UII18n.t("闹钟");
-  $('ringLabel').textContent = items.map(v => v.label).filter(Boolean).join('、');
-  $('ringNote').textContent = (r.notes || []).join('；');
+  $('ringKind').textContent = [...new Set(items.map(v => KIND_NAME[v.kind]))].join(UII18n.t("、")) || UII18n.t("闹钟");
+  $('ringLabel').textContent = items.map(v => v.label).filter(Boolean).join(UII18n.t("、"));
+  $('ringNote').textContent = (r.notes_msg || r.notes || []).map(UII18n.text).join(UII18n.t("；"));
 }
 function tickAlarms() {
   for (const el of document.querySelectorAll('[data-left]')) el.textContent = left(Number(el.dataset.left));
@@ -569,6 +588,10 @@ $('ringSnooze').addEventListener('click', () => {
 /* ---- settings: software update (update.py: the root updater installs, the page only asks) ---- */
 const UPD_STAGE = { preparing: UII18n.t("正在准备"), downloading: UII18n.t("正在下载"), installing: UII18n.t("正在安装"),
                     testing: UII18n.t("正在重启并自检"), rolling_back: UII18n.t("自检没通过，正在退回") };
+// the updater's message: {msg_key, msg_params} from a keyed updater, else its plain message
+const updMsg = job => UII18n.text(job.msg_key ? job : job.message || '');
+// job.reboot from the updater; an older updater only says it in its Chinese message
+const needsReboot = job => (typeof job.reboot === 'boolean' ? job.reboot : /重启设备后生效/.test(job.message || ''));
 let updArmed = 0;   // first tap on 更新 arms it, a second one within 5 s installs
 let updStarting = 0;   // request sent, the updater hasn't reported yet (it takes a few seconds to start)
 const mb = n => (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB';
@@ -581,9 +604,9 @@ function ago(t) {
 // (已更新到 0.1.5); the versions themselves are always right.
 function updDoneText(u, job) {
   const sys = (u || {}).system || {};
-  if (!sys.current || !ui.version) return job.message || UII18n.t("更新完成");
+  if (!sys.current || !ui.version) return updMsg(job) || UII18n.t("更新完成");
   return `${UII18n.t("更新完成：系统层")} ${sys.current} · ${UII18n.t("客户端")} ${ui.version}`
-    + (/重启设备后生效/.test(job.message || '') ? UII18n.t("，部分改动重启设备后生效") : '');
+    + (needsReboot(job) ? UII18n.t("，部分改动重启设备后生效") : '');
 }
 function updParts(u) {
   // what one tap installs, in the updater's order: the system layer (shell, audio...) first
@@ -606,44 +629,44 @@ function renderUpdate() {
   const cur = !ui.version ? '' : sys.current ? `${UII18n.t("客户端")} ${ui.version} · ${UII18n.t("系统层")} ${sys.current}` : `${UII18n.t("当前版本")} ${ui.version}`;
   // a system layer this image can't take (it needs packages only a newer image has)
   const blocked = sys.available && (sys.available.missing || []).length
-    ? `${UII18n.t("系统层")} ${sys.available.version} ${UII18n.t("要重刷新镜像才能装")}` : '';
+    ? UII18n.t("系统层 {version} 要重刷新镜像才能装", { version: sys.available.version }) : '';
   let title = UII18n.t("软件更新"), text, bad = false, label = '', notes = '';
-  if (!u.enabled) text = (cur ? cur + '。' : '') + UII18n.t("这台设备还没装更新服务");
+  if (!u.enabled) text = (cur ? cur + UII18n.t("。") : '') + UII18n.t("这台设备还没装更新服务");
   else if (starting) {
     title = UII18n.t("正在开始更新…");
     text = UII18n.t("正在连接更新服务器，请稍等");
   } else if (busy) {
     const what = job.component === 'system' ? UII18n.t("系统层") : UII18n.t("客户端");
-    title = `${UII18n.t("正在更新")}${what} ${job.version}`;
+    title = UII18n.t("正在更新{what} {version}", { what, version: job.version });
     const pct = job.state === 'downloading' && job.progress != null ? ` ${Math.round(job.progress * 100)}%` : '';
-    text = `${UPD_STAGE[job.state]}${pct}。` + (job.component === 'system' ? UII18n.t("屏幕可能会闪一下，") : '')
-      + UII18n.t("语音助手会暂停一会儿，请不要断电");
+    text = `${UPD_STAGE[job.state]}${pct}${UII18n.t("。")}` + (job.component === 'system'
+      ? UII18n.t("屏幕可能会闪一下，语音助手会暂停一会儿，请不要断电") : UII18n.t("语音助手会暂停一会儿，请不要断电"));
   } else if (avail) {
     title = UII18n.t("有新版本 ") + parts.map(p => `${p.name} ${p.version}`).join(' · ');
-    text = failed ? job.message + UII18n.t("。可以再试一次")
-      : `${cur}，${UII18n.t("下载约")} ${mb(parts.reduce((n, p) => n + (p.size || 0), 0))}` + (blocked ? `。${blocked}` : '');
+    text = failed ? updMsg(job) + UII18n.t("。可以再试一次")
+      : `${cur}${UII18n.t("，")}${UII18n.t("下载约")} ${mb(parts.reduce((n, p) => n + (p.size || 0), 0))}` + (blocked ? UII18n.t("。") + blocked : '');
     bad = failed;
     if (Date.now() - updArmed < 5000) {
       // waiting for the confirming tap: the hint stays on the card for those 5 s
       bad = false;
-      text = `${UII18n.t("更新时语音助手会停一会儿（约")} ${parts.length > 1 ? 2 : 1} ${UII18n.t("分钟）")}`
+      text = UII18n.t("更新时语音助手会停一会儿（约 {n} 分钟）", { n: parts.length > 1 ? 2 : 1 })
         + (parts.some(p => p.key === 'system') ? UII18n.t("，屏幕可能会闪一下") : '') + UII18n.t("。再点一下「确认更新」开始");
     }
     notes = parts.map(p => (parts.length > 1 ? `<li class="h">${p.name} ${esc(p.version)}</li>` : '')
                           + (p.notes || []).map(n => `<li>${esc(n)}</li>`).join('')).join('');
     label = Date.now() - updArmed < 5000 ? UII18n.t("确认更新") : UII18n.t("更新");
   } else {
-    text = recent && job.state === 'done' ? `${updDoneText(u, job)}，${UII18n.t("已是最新")}`
-      : failed ? job.message
-      : u.check_error ? `${cur}。${u.check_error}`
-      : blocked ? `${cur}。${blocked}`
-      : `${cur}，${UII18n.t("已是最新")}` + (u.checked ? `（${ago(u.checked)}${UII18n.t("检查过）")}` : '');
+    text = recent && job.state === 'done' ? `${updDoneText(u, job)}${UII18n.t("，")}${UII18n.t("已是最新")}`
+      : failed ? updMsg(job)
+      : u.check_error ? `${cur}${UII18n.t("。")}${UII18n.text(u.check_error_msg || u.check_error)}`
+      : blocked ? `${cur}${UII18n.t("。")}${blocked}`
+      : `${cur}${UII18n.t("，")}${UII18n.t("已是最新")}` + (u.checked ? UII18n.t("（{ago}检查过）", { ago: ago(u.checked) }) : '');
     bad = failed || (!!u.check_error && !(recent && job.state === 'done'));
     label = UII18n.t("检查更新");
   }
   if (u.custom_build) {
     text += ` · ${UII18n.t("自訂版本")} ${u.custom_build.label}`;
-    if (parts.some(p => p.key === 'client')) text += `。${UII18n.t("官方客戶端更新會移除此裝置的自訂修改，請確認新版本已包含所需功能後再更新。")}`;
+    if (parts.some(p => p.key === 'client')) text += `${UII18n.t("。")}${UII18n.t("官方客戶端更新會移除此裝置的自訂修改，請確認新版本已包含所需功能後再更新。")}`;
   }
   $('gearDot').classList.toggle('on', avail && !busy && !starting);
   $('updTitle').textContent = title;
@@ -664,7 +687,7 @@ function updateFinished(job) {
   if (!job || !(job.state === 'done' || job.state === 'rolled_back' || job.state === 'failed')) return;
   if (Date.now() / 1000 - job.time > 300) return;
   try { if (localStorage.getItem('updShown') === String(job.time)) return; localStorage.setItem('updShown', String(job.time)); } catch (e) { /* no storage */ }
-  toast(job.state === 'done' ? updDoneText(ui.update, job) : job.message, job.state === 'done' ? '' : 'error');
+  toast(job.state === 'done' ? updDoneText(ui.update, job) : updMsg(job), job.state === 'done' ? '' : 'error');
 }
 $('updBtn').addEventListener('click', async () => {
   const parts = updParts(ui.update || {});
@@ -689,7 +712,7 @@ $('updBtn').addEventListener('click', async () => {
   if (!r || !r.ok) {
     updStarting = 0;
     renderUpdate();
-    toast((r && r.error) || UII18n.t("没能开始更新"), 'error');
+    toast(reason(r, UII18n.t("没能开始更新")), 'error');
   }
 });
 if (DEMO !== null) {
@@ -717,7 +740,7 @@ function renderClear() {
 }
 function agentNote(r) {
   // Claude Code and Grok Bot keep their own context: clearing here doesn't touch it
-  return (r.agents || []).length ? `${r.agents.join(UII18n.t("和"))}${UII18n.t("自己那边的对话没有动")}` : '';
+  return (r.agents || []).length ? UII18n.t("{agents}自己那边的对话没有动", { agents: r.agents.join(UII18n.t("和")) }) : '';
 }
 $('clearBtn').addEventListener('click', async () => {
   if (Date.now() - clearArmed > 5000) {
@@ -730,9 +753,9 @@ $('clearBtn').addEventListener('click', async () => {
   renderClear();
   if (DEMO !== null) { handlers.thread({ entry: ui.thread.entry, messages: [] }); return toast(UII18n.t("聊天记录已清除")); }
   const r = await (await post('/api/history/clear', {}))?.json?.();
-  if (!r || !r.ok) return toast((r && r.error) || UII18n.t("没能清除"), 'error');
+  if (!r || !r.ok) return toast(reason(r, UII18n.t("没能清除")), 'error');
   const note = agentNote(r);
-  toast(UII18n.t("聊天记录已清除") + (note ? '。' + note : ''));
+  toast(UII18n.t("聊天记录已清除") + (note ? UII18n.t("。") + note : ''));
 });
 $('clearMemBtn').addEventListener('click', async () => {
   if (Date.now() - memArmed > 5000) {
@@ -745,7 +768,7 @@ $('clearMemBtn').addEventListener('click', async () => {
   renderClear();
   if (DEMO !== null) return toast(UII18n.t("记忆已清除，聊天记录还在"));
   const r = await (await post('/api/history/clear', { memory_only: true }))?.json?.();
-  toast(r && r.ok ? UII18n.t("记忆已清除，聊天记录还在") : (r && r.error) || UII18n.t("没能清除"), r && r.ok ? '' : 'error');
+  toast(r && r.ok ? UII18n.t("记忆已清除，聊天记录还在") : reason(r, UII18n.t("没能清除")), r && r.ok ? '' : 'error');
 });
 renderClear();
 
@@ -756,7 +779,7 @@ async function renderIp() {
     try { ip = (await (await fetch('/api/network')).json()).ip; } catch (e) { ip = null; }
   }
   $('ipNum').textContent = ip || UII18n.t("未联网");
-  $('ipSub').textContent = ip ? `${UII18n.t("在同一网络的电脑上打开 http://")}${ip}:16688/admin ${UII18n.t("进网关后台")}` : UII18n.t("连上 WiFi 后这里显示设备的地址");
+  $('ipSub').textContent = ip ? UII18n.t("在同一网络的电脑上打开 {url} 进网关后台", { url: `http://${ip}:16688/admin` }) : UII18n.t("连上 WiFi 后这里显示设备的地址");
 }
 $('btnSettings').addEventListener('click', () => { $('settings').classList.add('on'); renderIp(); renderWifiCard(); });
 /* ---- settings: WiFi (the kiosk shell scans and joins: thinksmart-kiosk.py, the same code as its welcome page) ---- */
@@ -785,6 +808,15 @@ window.thinksmartReply = function (r) {
   delete shellCalls[r.id];
   if (done) done(r);
 };
+// The kiosk keeps the device's language in its own file and adds ?lang from it (spec §6.2): a shell that
+// offers set_language writes the file first; an older shell, or a desktop browser, only this browser's storage.
+if (shellWifi && window.thinksmartShell.language) {
+  UII18n.setBeforeSwitch(async lang => {
+    const r = await shellCall('set_language', { lang });
+    if (r.ok !== true) toast(UII18n.t("没能切换界面语言"), 'error');
+    return r.ok === true;
+  });
+}
 // outside the kiosk (a desktop browser, ?demo): pretend to be a device; password "wrongpass" fails
 function wifiMock(m) {
   const reply = (r, ms) => setTimeout(() => window.thinksmartReply(Object.assign({ id: m.id }, r)), ms);
@@ -946,7 +978,7 @@ async function wifiConnect() {
   if (t.secure) t.mode = 'type';
   if (r.reason === 'password') wifi.pw = '';
   wifiMsg(usingSaved && r.reason === 'password' ? UII18n.t("保存的密码已失效，请重新输入")
-    : WIFI_REASONS[r.reason] || (UII18n.t("连接失败") + (r.detail ? '：' + r.detail : '')) + UII18n.t("，已连回原来的网络"), 'bad');
+    : WIFI_REASONS[r.reason] || (UII18n.t("连接失败") + (r.detail ? UII18n.t("：") + r.detail : '')) + UII18n.t("，已连回原来的网络"), 'bad');
   renderJoin();
   wifiFocus();
 }
@@ -962,11 +994,11 @@ async function wifiForget() {
   const r = await shellCall('forget', { ssid });
   wifi.busy = false;
   if (!r.ok) {
-    wifiMsg(`${UII18n.t("没能忘记")} ${ssid}，${UII18n.t("请再试一次")}`, 'bad');
+    wifiMsg(`${UII18n.t("没能忘记")} ${ssid}${UII18n.t("，")}${UII18n.t("请再试一次")}`, 'bad');
     return renderJoin();
   }
   wifi.target.saved = false;
-  wifiMsg(`${UII18n.t("已忘记")} ${ssid}，${UII18n.t("下次连接需要重新输入密码")}`, 'ok');
+  wifiMsg(`${UII18n.t("已忘记")} ${ssid}${UII18n.t("，")}${UII18n.t("下次连接需要重新输入密码")}`, 'ok');
   renderJoin();
   wifi.nets = wifi.nets.map(n => n.ssid === ssid ? Object.assign({}, n, { saved: false }) : n);
   setTimeout(() => { if (!wifi.busy) { wifiList(); wifiScan(); } }, 1400);
@@ -1010,11 +1042,11 @@ function renderBluetooth() {
   $('btSwitch').setAttribute('aria-checked', String(on));
   $('btSwitch').disabled = !b.available;
   $('btCard').classList.toggle('off', !on);
-  $('btName').textContent = on && b.name ? `${UII18n.t("手机上显示为「")}${b.name}」` : '';
+  $('btName').textContent = on && b.name ? UII18n.t("手机上显示为「{name}」", { name: b.name }) : '';
   let note;
   if (!b.available) note = UII18n.t("找不到蓝牙，或者蓝牙服务没有运行。");
   else if (!b.enabled) note = UII18n.t("打开后，手机可以把这台设备当蓝牙音箱放歌。");
-  else if (b.window) note = `${UII18n.t("正在等手机连接（还剩")} ${b.window} ${UII18n.t("秒）：在手机的蓝牙设置里点「")}${b.name}」，${UII18n.t("配对不用输密码。")}`;
+  else if (b.window) note = UII18n.t("正在等手机连接（还剩 {s} 秒）：在手机的蓝牙设置里点「{name}」，配对不用输密码。", { s: b.window, name: b.name });
   else note = UII18n.t("连过的手机在蓝牙设置里点一下就能再连上。放歌时说话或闹钟响，歌声会自动变小或暂停。");
   if (on && b.direct) note += UII18n.t(" 注意：系统层版本较旧，手机的声音没经过客户端，放歌时很难唤醒。");
   $('btNote').textContent = note;
@@ -1026,7 +1058,7 @@ function renderBluetooth() {
                           : `<button class="al-del" data-addr="${esc(d.address)}">${UII18n.t("忘记")}</button></div>`)).join('')
     : UII18n.t("<div class=\"alarm-empty\">还没有连过的手机</div>");
   $('btAdd').classList.toggle('on', !!b.window);
-  $('btAdd').textContent = b.window ? `${UII18n.t("停止等待（")}${b.window} ${UII18n.t("秒）")}` : UII18n.t("＋ 添加手机");
+  $('btAdd').textContent = b.window ? UII18n.t("停止等待（{s} 秒）", { s: b.window }) : UII18n.t("＋ 添加手机");
 }
 // 「忘记」 needs a second tap within 4 s. Kept by address, not on the button: while 添加手机 waits
 // the list is redrawn every second (the countdown), which would drop a state kept on the DOM.
@@ -1076,7 +1108,7 @@ $('powerBtn').addEventListener('click', async () => {
   renderPower();
   if (DEMO !== null) return toast(UII18n.t("演示模式不会真的关机"));
   const r = await (await post('/api/power-off', {}))?.json?.();
-  if (!r || !r.ok) toast((r && r.error) || UII18n.t("没能关机"), 'error');
+  if (!r || !r.ok) toast(reason(r, UII18n.t("没能关机")), 'error');
 });
 $('settingsClose').addEventListener('click', () => {
   $('settings').classList.remove('on');
@@ -1103,7 +1135,7 @@ function entryModel(entry) {
 function renderHead() {
   const m = entryModel(ui.thread.entry);
   $('headLogo').src = logoSrc(m);
-  $('headTitle').textContent = m ? `${UII18n.t("与")} ${m.label} ${UII18n.t("的对话")}` : UII18n.t("对话");
+  $('headTitle').textContent = m ? UII18n.t("与 {name} 的对话", { name: m.label }) : UII18n.t("对话");
   const n = ui.thread.messages.length;
   $('headMeta').textContent = n ? `${n} ${UII18n.t("条消息 ·")} ${ui.status.connected ? UII18n.t("对话中") : UII18n.t("记录已保存")}` : UII18n.t("新对话");
 }
@@ -1208,7 +1240,7 @@ function renderPending() {
 let toastTimer = null;
 function toast(text, kind) {
   const t = $('toast');
-  t.textContent = UII18n.t(text);
+  t.textContent = UII18n.text(text);   // a string of ours, or a {msg_key, msg_params} answer
   t.className = 'toast on' + (kind === 'error' ? ' error' : '');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.className = 'toast' + (kind === 'error' ? ' error' : ''); }, kind === 'error' ? 4500 : 2500);
@@ -1386,7 +1418,7 @@ const demo = DEMO === null ? null : (() => {
     synced: true, volume: 70, tone: 'coffee', tones, ringing: null,
     items: [
       { id: 3, kind: 'timer', type: UII18n.t("倒计时"), label: UII18n.t("煮鸡蛋"), at: now() + 271, repeat: '', snoozed: false },
-      { id: 1, kind: 'alarm', type: UII18n.t("闹钟"), label: UII18n.t("起床"), at: now() + 9 * 3600, repeat: UII18n.t("每个工作日（周一到周五）"), snoozed: false },
+      { id: 1, kind: 'alarm', type: UII18n.t("闹钟"), label: UII18n.t("起床"), at: now() + 9 * 3600, repeat: UII18n.t("每个工作日（周一到周五）"), rule: { type: 'workdays' }, snoozed: false },
       { id: 2, kind: 'reminder', type: UII18n.t("提醒"), label: UII18n.t("晾衣服"), at: now() + 26 * 3600, repeat: '', snoozed: false, spoken: true },
     ],
     missed: [{ kind: 'reminder', label: UII18n.t("吃药"), at: now() - 3 * 3600, why: 'unanswered', noted: now() - 3 * 3600 },
