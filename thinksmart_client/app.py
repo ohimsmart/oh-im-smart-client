@@ -1197,7 +1197,8 @@ class Client:
         return {'synced': self.clock_ok, 'items': [self.alarms.view(i, now) for i in self.alarms.active()],
                 'missed': self.alarms.missed[::-1],
                 'ringing': ring and {'items': [self.alarms.view(i, now) for i in ring['items']],
-                                     'notes': ring['notes'], 'started': ring['started']},
+                                     'notes': ring['notes'], 'notes_msg': ring.get('notes_msg', []),
+                                     'started': ring['started']},
                 'volume': self.alarm_volume, 'tone': self.alarm_tone, 'tones': alarms.TONES}
 
     def publish_alarms(self):
@@ -1284,17 +1285,19 @@ class Client:
         if self.ring and self.ring['closing']:
             return   # the ring is ending: what is due now rings on its own once it has
         before = len(self.alarms.missed)
-        items, notes = self.alarms.take_due(now, self.ring['items'] if self.ring else ())
+        msgs = []
+        items, notes = self.alarms.take_due(now, self.ring['items'] if self.ring else (), msgs)
         if items and self.ring:
             # due while another rings: they ring together, and the ring lasts its full time from now
             self.ring['items'] += items
             self.ring['notes'] += notes
+            self.ring['notes_msg'] = self.ring.get('notes_msg', []) + msgs
             self.ring['fired'].update((i['id'], now) for i in items)
             self.ring['joined'].append((time.monotonic(), all(i['kind'] == 'reminder' for i in items)))
             log.info('joined the ring: %s', [(i['id'], i['kind'], i['label']) for i in items])
             self.publish_alarms()
         elif items:
-            self.ring = {'items': items, 'notes': notes, 'started': now, 'volume': self.alarm_volume,
+            self.ring = {'items': items, 'notes': notes, 'notes_msg': msgs, 'started': now, 'volume': self.alarm_volume,
                          'stop': asyncio.Event(), 'joined': [], 'fired': {}, 'closing': False}
             self.ring['task'] = asyncio.create_task(self._ringing(self.ring))
         elif len(self.alarms.missed) != before:

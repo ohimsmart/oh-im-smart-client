@@ -311,10 +311,11 @@ class Alarms:
         self.save()
         return True
 
-    def take_due(self, now, ringing=()):
+    def take_due(self, now, ringing=(), msgs=None):
         """What to ring now (besides what is `ringing` already): (entries, notes); notes are the
         "错过了 7:00 的闹钟" ones (missed while off by under CATCH_UP). Missed by more: noted, and
-        moved on to their next time."""
+        moved on to their next time. msgs: a list that also gets each note as {msg_key, msg_params},
+        for the page (the notes themselves are spoken)."""
         ring, notes, changed = [], [], False
         for item in list(self.items):
             t = due(item)
@@ -325,7 +326,11 @@ class Alarms:
                 ring.append(item)
             elif late <= CATCH_UP:
                 ring.append(item)
-                notes.append(f"错过了 {datetime.datetime.fromtimestamp(t):%H:%M} 的{KINDS[item['kind']]}")
+                hm = f'{datetime.datetime.fromtimestamp(t):%H:%M}'
+                notes.append(f"错过了 {hm} 的{KINDS[item['kind']]}")
+                if msgs is not None:
+                    msgs.append({'msg_key': '错过了 {time} 的{kind}',
+                                 'msg_params': {'time': hm, 'kind': {'msg_key': KINDS[item['kind']]}}})
             else:
                 self._note_missed(item, t, 'off', now)
                 self._advance(item, now, now)
@@ -400,7 +405,7 @@ class Alarms:
         t = due(item)
         return {'id': item['id'], 'kind': item['kind'], 'type': KINDS[item['kind']], 'label': item['label'],
                 'at': t, 'when': describe_when(t, now) if t else '', 'in': describe_in(t, now) if t else '',
-                'repeat': describe_repeat(item['repeat']), 'snoozed': item.get('snooze') is not None,
+                'repeat': describe_repeat(item['repeat']), 'rule': item['repeat'], 'snoozed': item.get('snooze') is not None,
                 'spoken': item.get('clip')}
 
 

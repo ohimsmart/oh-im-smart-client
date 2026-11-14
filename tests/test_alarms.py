@@ -812,3 +812,36 @@ async def test_wake_word_stops_a_preview(tmp_path, monkeypatch):
     await asyncio.sleep(0.05)
     await c.wake('voice')
     assert c.preview is None and sp.volume == 40 and c.state == 'listening'
+
+
+def test_missed_notes_also_come_keyed_for_the_page(tmp_path):
+    clock = Clock(2026, 11, 3, 6, 0)
+    alarms.Alarms(tmp_path, clock).create('alarm', '起床', time='07:00')
+    clock.t = ts(2026, 11, 3, 7, 40)    # off from before 7:00 until 7:39
+    msgs = []
+    ring, notes = alarms.Alarms(tmp_path, clock).take_due(clock(), (), msgs)
+    assert notes == ['错过了 07:00 的闹钟']   # still spoken as before
+    assert msgs == [{'msg_key': '错过了 {time} 的{kind}', 'msg_params': {'time': '07:00', 'kind': {'msg_key': '闹钟'}}}]
+
+
+def test_view_carries_the_repeat_rule_for_the_page(tmp_path):
+    a = alarms.Alarms(tmp_path, Clock(2026, 11, 3, 6, 0))
+    item = a.create('alarm', '吃药', time='07:10', repeat={'type': 'weekly', 'days': [3, 1]})
+    v = a.view(a.get(item['id']))
+    assert v['rule'] == a.get(item['id'])['repeat'] and v['rule']['type'] == 'weekly'
+    assert v['repeat'] == '每周一、三'   # the model still reads the Chinese description
+
+
+@pytest.mark.asyncio
+async def test_the_ring_screen_gets_the_missed_notes_keyed(tmp_path, monkeypatch):
+    Speaker(monkeypatch, 40)
+    clock = Clock(2026, 11, 3, 6, 0)
+    c = make_client(tmp_path, monkeypatch, clock)
+    c.alarms.create('alarm', '起床', time='07:00')
+    clock.t = ts(2026, 11, 3, 7, 40)
+    await c._alarm_tick(clock())
+    await asyncio.sleep(0.05)
+    ringing = c.alarm_view()['ringing']
+    assert ringing['notes'] == ['错过了 07:00 的闹钟']
+    assert ringing['notes_msg'][0]['msg_key'] == '错过了 {time} 的{kind}'
+    await c.stop_alarm()
