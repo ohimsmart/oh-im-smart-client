@@ -72,3 +72,25 @@ test('error answers: the gateway\'s {msg_key, msg_params}, else the error text, 
   assert.equal(reason({ok: false}, 'fallback'), 'fallback');
   assert.equal(reason(null, 'fallback'), 'fallback');
 });
+
+test('/v1 asks the kiosk shell with set_language and switches only on its ok', async () => {
+  const v1 = fs.readFileSync(path.join(WEB, 'app.js'), 'utf8');
+  const bridge = v1.match(/^function languageBridge\(.*?\n}\n/ms);
+  assert.ok(bridge, 'languageBridge not found in web/app.js');
+  const sent = [], toasts = [];
+  const context = {UII18n: {t: s => s}, toast: (text, kind) => toasts.push([text, kind]), setTimeout: () => 0, JSON};
+  context.window = context;
+  vm.runInNewContext(bridge[0] + '\nthis.bridge = languageBridge;', context);
+  const ask = context.bridge({postMessage: m => sent.push(JSON.parse(m))});
+
+  const yes = ask('en');
+  assert.deepEqual(sent[0], {id: 1, cmd: 'set_language', lang: 'en'});
+  context.thinksmartReply({id: 1, ok: true});
+  assert.equal(await yes, true);
+  assert.deepEqual(toasts, []);
+
+  const no = ask('zh-Hant');
+  context.thinksmartReply({id: 2, ok: false, reason: 'failed'});
+  assert.equal(await no, false);
+  assert.deepEqual(toasts, [['没能切换界面语言', 'error']]);
+});
