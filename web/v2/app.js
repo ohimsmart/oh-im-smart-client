@@ -592,6 +592,8 @@ const UPD_STAGE = { preparing: UII18n.t("正在准备"), downloading: UII18n.t("
 const updMsg = job => UII18n.text(job.msg_key ? job : job.message || '');
 // job.reboot from the updater; an older updater only says it in its Chinese message
 const needsReboot = job => (typeof job.reboot === 'boolean' ? job.reboot : /重启设备后生效/.test(job.message || ''));
+// a failed or rolled-back result; the system layer before it may still need a restart (spec §6.1)
+const updFail = job => updMsg(job) + (job.state !== 'done' && needsReboot(job) ? UII18n.t("。") + UII18n.t("系统层的部分改动重启设备后生效") : '');
 let updArmed = 0;   // first tap on 更新 arms it, a second one within 5 s installs
 let updStarting = 0;   // request sent, the updater hasn't reported yet (it takes a few seconds to start)
 const mb = n => (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB';
@@ -643,7 +645,7 @@ function renderUpdate() {
       ? UII18n.t("屏幕可能会闪一下，语音助手会暂停一会儿，请不要断电") : UII18n.t("语音助手会暂停一会儿，请不要断电"));
   } else if (avail) {
     title = UII18n.t("有新版本 ") + parts.map(p => `${p.name} ${p.version}`).join(' · ');
-    text = failed ? updMsg(job) + UII18n.t("。可以再试一次")
+    text = failed ? updFail(job) + UII18n.t("。可以再试一次")
       : `${cur}${UII18n.t("，")}${UII18n.t("下载约")} ${mb(parts.reduce((n, p) => n + (p.size || 0), 0))}` + (blocked ? UII18n.t("。") + blocked : '');
     bad = failed;
     if (Date.now() - updArmed < 5000) {
@@ -657,7 +659,7 @@ function renderUpdate() {
     label = Date.now() - updArmed < 5000 ? UII18n.t("确认更新") : UII18n.t("更新");
   } else {
     text = recent && job.state === 'done' ? `${updDoneText(u, job)}${UII18n.t("，")}${UII18n.t("已是最新")}`
-      : failed ? updMsg(job)
+      : failed ? updFail(job)
       : u.check_error ? `${cur}${UII18n.t("。")}${UII18n.text(u.check_error_msg || u.check_error)}`
       : blocked ? `${cur}${UII18n.t("。")}${blocked}`
       : `${cur}${UII18n.t("，")}${UII18n.t("已是最新")}` + (u.checked ? UII18n.t("（{ago}检查过）", { ago: ago(u.checked) }) : '');
@@ -687,7 +689,7 @@ function updateFinished(job) {
   if (!job || !(job.state === 'done' || job.state === 'rolled_back' || job.state === 'failed')) return;
   if (Date.now() / 1000 - job.time > 300) return;
   try { if (localStorage.getItem('updShown') === String(job.time)) return; localStorage.setItem('updShown', String(job.time)); } catch (e) { /* no storage */ }
-  toast(job.state === 'done' ? updDoneText(ui.update, job) : updMsg(job), job.state === 'done' ? '' : 'error');
+  toast(job.state === 'done' ? updDoneText(ui.update, job) : updFail(job), job.state === 'done' ? '' : 'error');
 }
 $('updBtn').addEventListener('click', async () => {
   const parts = updParts(ui.update || {});

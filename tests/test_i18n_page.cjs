@@ -23,7 +23,8 @@ const HELPERS = [
   piece(/^function repeatText\(.*?\n}\n/ms),
   piece(/^const updMsg = .*$/m),
   piece(/^const needsReboot = .*$/m),
-].join('\n') + '\nthis.page = { longDate, weekdayName, reason, repeatText, updMsg, needsReboot };';
+  piece(/^const updFail = .*$/m),
+].join('\n') + '\nthis.page = { longDate, weekdayName, reason, repeatText, updMsg, needsReboot, updFail };';
 
 function page(language) {
   const context = {navigator: {language}, URLSearchParams, localStorage: {getItem() {}, setItem() {}},
@@ -93,4 +94,27 @@ test('/v1 asks the kiosk shell with set_language and switches only on its ok', a
   context.thinksmartReply({id: 2, ok: false, reason: 'failed'});
   assert.equal(await no, false);
   assert.deepEqual(toasts, [['没能切换界面语言', 'error']]);
+});
+
+test("the updater's messages in English and Traditional Chinese, nested reasons too", () => {
+  const en = page('en'), hant = page('zh-Hant');
+  const rollback = {state: 'rolled_back', message: '系统层 0.2.0 没装成功（屏幕界面没有启动起来），已退回 0.1.0',
+    msg_key: '系统层 {version} {why}，已退回 {old}',
+    msg_params: {version: '0.2.0', old: '0.1.0',
+      why: {msg_key: '没装成功（{why}）', msg_params: {why: {msg_key: '屏幕界面没有启动起来', msg_params: {}}}}}};
+  assert.equal(en.updMsg(rollback), 'System layer 0.2.0: installation failed (the screen interface did not start); went back to 0.1.0');
+  assert.equal(hant.updMsg(rollback), '系統層 0.2.0 沒裝成功（螢幕介面沒有啟動起來），已退回 0.1.0');
+  const offline = {msg_key: '连不上更新服务器', msg_params: {}};   // the page shows check_error_msg the same way
+  assert.equal(en.updMsg(offline), 'Can’t reach the update server');
+  assert.equal(hant.updMsg(offline), '連不上更新伺服器');
+});
+
+test('a failed client after a system layer that needs a restart still says restart', () => {
+  const en = page('en');
+  const failed = {state: 'failed', message: '连不上更新服务器', msg_key: '连不上更新服务器', msg_params: {}};
+  const withRestart = en.updFail({...failed, reboot: true});
+  assert.ok(withRestart.startsWith('Can’t reach the update server'), withRestart);
+  assert.ok(withRestart.endsWith('Some system layer changes take effect after a restart'), withRestart);
+  assert.equal(en.updFail({...failed, reboot: false}), 'Can’t reach the update server');
+  assert.equal(en.updFail({state: 'failed', message: '下载失败'}), en.updMsg({message: '下载失败'}));   // an older updater
 });
