@@ -83,6 +83,7 @@ def make_client():
     c.sleep, c.sleeping, c.reports = {}, False, 0
     c.screen_off = {'enabled': True, 'minutes': 5}
     c.sounds = {}
+    c.wake_prompt = types.SimpleNamespace(update=lambda profile: None)   # #4: models carry the hub's TTS profile
     c.verifier = None
     c.speech_end = 0.0
     c.connecting = asyncio.Lock()
