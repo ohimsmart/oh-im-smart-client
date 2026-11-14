@@ -1,8 +1,10 @@
 # xiaozhi-thinksmart-client
 
-联想 ThinkSmart View（CD-18781Y）上的语音客户端：本地唤醒词「小麦小麦」、回声消除、按小智协议连 [xiaozhi-hub-server](https://github.com/justhalfbit/xiaozhi-hub-server)，并在 `127.0.0.1:8090` 提供展示屏上的对话界面。
+联想 ThinkSmart View（CD-18781Y）上的语音客户端：本地唤醒词「小麦小麦」、回声消除、按小智协议连 [oh-im-smart-gateway](https://github.com/ohimsmart/oh-im-smart-gateway)，并在 `127.0.0.1:8090` 提供展示屏上的对话界面。
 
-它是 [thinksmart-ubuntu-image](https://github.com/justhalfbit/thinksmart-ubuntu-image) 系统镜像的一部分，刷机和安装见那边的 README；装好的设备在设置页「软件更新」里从本仓库的 Release 在线更新（系统镜像的系统层更新包也放在本仓库的 Release 里，和客户端一起显示、一起装；这些文件是设备自动下载的，刷机镜像在系统镜像仓库）。
+它是 [oh-im-smart](https://github.com/ohimsmart/oh-im-smart) 系统镜像的一部分，刷机和安装见那边的 README；装好的设备在设置页「软件更新」里从本仓库的 Release 在线更新（系统镜像的系统层更新包也放在本仓库的 Release 里，和客户端一起显示、一起装；这些文件是设备自动下载的，刷机镜像在系统镜像仓库）。
+
+本仓库是 Oh I'm Smart 的语音客户端，源自半格 / HalfBit 的 [xiaozhi-thinksmart-client](https://github.com/justhalfbit/xiaozhi-thinksmart-client)（MIT），出处见 [NOTICE](NOTICE)。
 
 ## 结构
 
@@ -45,16 +47,15 @@
 
 ## 介面語言
 
-在設定頁的「介面語言」可切換簡體中文與繁體中文。首次開啟會依瀏覽器的語言選擇；
-`zh-TW`、`zh-HK`、`zh-MO` 與 `zh-Hant` 使用繁體中文。手動選擇會保存在該瀏覽器的本機儲存空間，重新開啟仍會保留。
-尚未儲存偏好時，也可用 `/?lang=zh-Hant` 作為首次開啟的語系；已儲存的手動選擇優先。
+在設定頁的「介面語言」可切換简体中文、繁體中文和 English。決定次序：網址的 `?lang=` → 這個瀏覽器記住的選擇 → 瀏覽器的語言（`zh-TW`、`zh-HK`、`zh-MO`、`zh-Hant` 用繁體中文，其他 `zh` 用简体中文，其餘用英文）；無效的 `?lang` 會被忽略。
+在裝置上，展示屏外殼保存裝置的介面語言，每次載入客戶端都會附上 `?lang`；外殼支援 `set_language` 時，切換語言會先由外殼寫入，再以新的 `?lang` 重新載入。舊版 `/v1` 介面只記在瀏覽器裏，不寫入外殼。
 
 只翻譯介面文案，不轉換聊天原文、Wi-Fi 名稱、使用者輸入或語音辨識結果。模型的回覆語言和語音供應商在網關管理後台設定。
 
 喚醒提示也跟隨網關的說話語言與音色，例如「在」、「喺度」或 “I’m here”：客戶端在背景預先合成並按模型／音色／語言快取於 `~/.cache/thinksmart-client/wake/`，喚醒時直接播放，不等待雲端。修改語音設定後會丟棄舊音色；合成尚未完成、失敗或舊網關未提供語音識別碼時，只播放提示音。失敗後至少等 60 秒重試，不使用固定的預錄人聲。切換設定後第一次預先合成可能產生語音服務費用，重啟時可重用同一設定的快取。
-v1、v2 介面共用 `web/i18n.js` 與 `web/zh-Hant.js`；新增介面文案時，使用 `UII18n.t()` 並補上字典。
+v1、v2 介面共用 `web/i18n.js`、`web/zh-Hant.js` 與 `web/en.js`。新增介面文案時使用 `UII18n.t()` 並補上三份字典；句子裏有數值時寫成範本 `UII18n.t("还有 {n} 条", { n })`，不要拼接片段。後端回傳 `{msg_key, msg_params}` 時用 `UII18n.text()` 顯示。
 
-語系測試（不需要音訊裝置或 npm 套件）：`node --test tests/test_i18n.cjs`。
+語系測試（不需要音訊裝置或 npm 套件）：`node --test tests/*.cjs`；字典完整性（需要 node）：`.venv/bin/python -m pytest tests/test_i18n_keys.py`。
 
 官方客戶端更新會替換整個程式目錄，因此尚未合併的自訂介面也會被替換。部署自訂版本時，可在程式根目錄放置 `PR-BUILD.json`，例如 `{"label":"0.1.6 + PR4","client":"提交雜湊"}`。更新頁會顯示自訂標記，並在既有的確認更新步驟提醒官方更新將移除自訂修改；客戶端更新 API 須明確傳入 `replace_custom: true`，系統層單獨更新不受此限制。標記是提醒與客戶端 API 保護，不會修改 root 更新器或阻止管理員直接安裝官方版本。
 

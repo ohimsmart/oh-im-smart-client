@@ -1,7 +1,7 @@
 // ThinkSmart voice client page: renders what the client streams on /events and sends the buttons back.
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-const WEEK = UII18n.t("日一二三四五六");
+const WEEK = '日一二三四五六';   // Chinese weekday characters by getDay()
 
 const ui = {
   status: { state: 'idle', connected: false, uploading: false },
@@ -14,7 +14,8 @@ const ui = {
 function tick() {
   const now = new Date();
   $('time').textContent = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-  $('date').textContent = `${now.getMonth() + 1}${UII18n.t("月")}${now.getDate()}${UII18n.t("日 星期")}${WEEK[now.getDay()]}`;
+  $('date').textContent = UII18n.applied === 'en' ? now.toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' })
+    : `${now.getMonth() + 1}月${now.getDate()}日 星期${WEEK[now.getDay()]}`;
 }
 
 /* ---- status: orb colour, title, hint, buttons ---- */
@@ -31,7 +32,7 @@ function renderStatus() {
     idle: [UII18n.t("说<em>「小麦小麦」</em>"), connected ? UII18n.t("对话还保留着，唤醒后可以接着聊") : UII18n.t("或者点下面的麦克风；按住可以直接说")],
     connecting: [UII18n.t("正在连接…"), UII18n.t("连上小智网关后就开始听")],
     listening: ui.ptt ? [UII18n.t("松开发送"), UII18n.t("说完松开手指")] : [UII18n.t("我在听"), UII18n.t("说完停一下我就开始回答")],
-    thinking: [`${esc(modelName())} ${UII18n.t("正在思考…")}`, UII18n.t("复杂的问题可能要想一会儿")],
+    thinking: [UII18n.t("{name} 正在思考…", { name: esc(modelName()) }), UII18n.t("复杂的问题可能要想一会儿")],
     speaking: [UII18n.t("正在回答"), UII18n.t("随时开口就能打断我")],
   }[shown] || ['', ''];
   $('title').innerHTML = text[0];
@@ -65,7 +66,7 @@ async function switchModel(m) {
   try {
     const r = await (await fetch('/api/model', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                                  body: JSON.stringify({ kind: m.kind, vendor: m.vendor, entry: m.entry }) })).json();
-    if (r.ok === false) toast(r.error || UII18n.t("切换失败"), 'error');
+    if (r.ok === false) toast((r.msg_key ? r : r.error) || UII18n.t("切换失败"), 'error');
     else toast(`${UII18n.t("已切换到")} ${m.label}`);
   } catch (e) {
     toast(UII18n.t("切换失败：客户端没有响应"), 'error');
@@ -80,7 +81,7 @@ function entryModel(entry) {
 function renderChatHead() {
   const m = entryModel(ui.thread.entry);
   $('chatLogo').src = m && m.logo ? `/static/logos/${m.logo}.svg` : '';
-  $('chatTitle').textContent = m ? `${UII18n.t("与")} ${m.label} ${UII18n.t("的对话")}` : UII18n.t("对话");
+  $('chatTitle').textContent = m ? UII18n.t("与 {name} 的对话", { name: m.label }) : UII18n.t("对话");
   const n = ui.thread.messages.length;
   $('chatSub').textContent = n ? `${n} ${UII18n.t("条消息 ·")} ${ui.status.connected ? UII18n.t("上下文保持中") : UII18n.t("已结束")}` : UII18n.t("新对话");
 }
@@ -99,9 +100,9 @@ function renderThread() {
   box.textContent = '';
   if (!ui.thread.messages.length) {
     box.innerHTML = `<div class="empty"><div class="big">${UII18n.t("说「小麦小麦」开始聊天")}</div><div class="tips">
-      <div class="tip">「${UII18n.t("今天北京天气怎么样？」")}</div>
-      <div class="tip">「${UII18n.t("嗨 Claude，帮我想个周末计划」")}</div>
-      <div class="tip">「${UII18n.t("把音量调小一点」")}</div></div></div>`;
+      <div class="tip">${UII18n.t("「今天北京天气怎么样？」")}</div>
+      <div class="tip">${UII18n.t("「嗨 Claude，帮我想个周末计划」")}</div>
+      <div class="tip">${UII18n.t("「把音量调小一点」")}</div></div></div>`;
   } else {
     for (const m of ui.thread.messages) box.appendChild(msgEl(m));
   }
@@ -150,7 +151,7 @@ function markLive() {
 let toastTimer = null;
 function toast(text, kind) {
   const t = $('toast');
-  t.textContent = UII18n.t(text);
+  t.textContent = UII18n.text(text);
   t.className = 'toast on' + (kind === 'error' ? ' error' : '');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.className = 'toast'; }, kind === 'error' ? 4500 : 2500);
