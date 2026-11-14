@@ -220,6 +220,22 @@ $('btnAbort').addEventListener('click', () => post('/api/abort'));
 $('btnEnd').addEventListener('click', () => { post('/api/end'); toast(UII18n.t("对话已结束，聊天记录已保存")); });
 document.addEventListener('contextmenu', e => e.preventDefault());
 
+// The kiosk keeps the device's language in its own file (spec §6.2). /v1 sends no other shell command, so
+// this is the whole bridge: set_language first, the switch only once the shell says ok (as /v2 does).
+function languageBridge(shell, timeout = 90000) {
+  const waiting = {};
+  let seq = 0;
+  window.thinksmartReply = r => { const done = waiting[r.id]; delete waiting[r.id]; if (done) done(r); };
+  return lang => new Promise(resolve => {
+    const id = ++seq;
+    waiting[id] = r => resolve(r.ok === true);
+    setTimeout(() => window.thinksmartReply({ id, ok: false, reason: 'noreply' }), timeout);
+    shell.postMessage(JSON.stringify({ id, cmd: 'set_language', lang }));
+  }).then(ok => { if (!ok) toast(UII18n.t("没能切换界面语言"), 'error'); return ok; });
+}
+const kioskShell = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.thinksmart;
+if (kioskShell && window.thinksmartShell && window.thinksmartShell.language) UII18n.setBeforeSwitch(languageBridge(kioskShell));
+
 tick();
 setInterval(tick, 1000);
 renderStatus();
