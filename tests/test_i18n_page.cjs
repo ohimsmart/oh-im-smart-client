@@ -1,0 +1,74 @@
+// The page's own helpers in English and Simplified Chinese (web/v2/app.js): node --test tests/test_i18n_page.cjs
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const WEB = path.join(__dirname, '..', 'web');
+const APP = fs.readFileSync(path.join(WEB, 'v2', 'app.js'), 'utf8');
+const CHINESE = /[　-〿一-鿿＀-￯]/;
+
+// the helpers' source, cut out of app.js the way tests/test_welcome.py does
+function piece(re) {
+  const m = APP.match(re);
+  assert.ok(m, `not found in web/v2/app.js: ${re}`);
+  return m[0];
+}
+const HELPERS = [
+  piece(/^const WEEK = .*$/m),
+  piece(/^function longDate\(.*?\n}\n/ms),
+  piece(/^function weekdayName\(.*?\n}\n/ms),
+  piece(/^const reason = .*$/m),
+  piece(/^function repeatText\(.*?\n}\n/ms),
+  piece(/^const updMsg = .*$/m),
+  piece(/^const needsReboot = .*$/m),
+].join('\n') + '\nthis.page = { longDate, weekdayName, reason, repeatText, updMsg, needsReboot };';
+
+function page(language) {
+  const context = {navigator: {language}, URLSearchParams, localStorage: {getItem() {}, setItem() {}},
+                   location: {search: ''}};
+  context.window = context;
+  for (const f of ['zh-Hant.js', 'en.js', 'i18n.js']) vm.runInNewContext(fs.readFileSync(path.join(WEB, f), 'utf8'), context);
+  vm.runInNewContext(HELPERS, context);
+  return context.page;
+}
+
+test('dates follow the language: English word order, the Chinese format unchanged', () => {
+  const day = new Date(2026, 10, 14);   // a Saturday
+  assert.equal(page('en-US').longDate(day), 'Saturday, November 14');
+  assert.equal(page('zh-CN').longDate(day), '11月14日 星期六');
+  assert.equal(page('zh-CN').longDate(day, '  '), '11月14日  星期六');
+  assert.deepEqual([1, 3, 7].map(page('en-US').weekdayName), ['Mon', 'Wed', 'Sun']);
+  assert.deepEqual([1, 3, 7].map(page('zh-CN').weekdayName), ['一', '三', '日']);
+});
+
+test('alarm repeat rules in English', () => {
+  const {repeatText} = page('en-US');
+  for (const rule of [{type: 'daily'}, {type: 'workdays'}, {type: 'weekly', days: [1, 3]}, {type: 'monthly', day: 31}]) {
+    assert.doesNotMatch(repeatText(rule), CHINESE, JSON.stringify(rule));
+  }
+  assert.equal(repeatText({type: 'weekly', days: [1, 3]}), 'Every Mon, Wed');
+  assert.equal(page('zh-CN').repeatText({type: 'weekly', days: [1, 3]}), '每周一、三');
+});
+
+test("the updater's keyed messages and reboot flag; an older updater's plain message still works", () => {
+  const en = page('en-US');
+  const job = {message: '已更新到 1.0.1', msg_key: '错过了 {time} 的{kind}', msg_params: {time: '07:00', kind: {msg_key: '闹钟'}}};
+  assert.equal(en.updMsg(job), 'Missed: Alarm at 07:00');
+  assert.equal(en.updMsg({message: '设置'}), 'Settings');
+  assert.equal(en.updMsg({}), '');
+  assert.equal(en.needsReboot({reboot: true}), true);
+  assert.equal(en.needsReboot({reboot: false, message: '系统层已更新到 1.0.1，部分改动重启设备后生效'}), false);
+  assert.equal(en.needsReboot({message: '系统层已更新到 1.0.1，部分改动重启设备后生效'}), true);
+  assert.equal(en.needsReboot({message: '已更新到 1.0.1'}), false);
+});
+
+test('error answers: the gateway\'s {msg_key, msg_params}, else the error text, else our fallback', () => {
+  const {reason} = page('en-US');
+  const keyed = {ok: false, error: '配置里没有 X', msg_key: '配置里没有 {name}', msg_params: {name: 'X'}};
+  assert.equal(reason(keyed, 'fallback'), keyed);
+  assert.equal(reason({ok: false, error: '设置'}, 'fallback'), '设置');
+  assert.equal(reason({ok: false}, 'fallback'), 'fallback');
+  assert.equal(reason(null, 'fallback'), 'fallback');
+});

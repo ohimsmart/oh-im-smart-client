@@ -40,7 +40,6 @@ def test_every_source_text_has_one_chinese_entry():
     assert sorted((hant | hans) - keys) == [], 'zh-Hant.js entries no source shows'
 
 
-@pytest.mark.xfail(strict=True, reason='web/en.js comes with the English picker option (client plan Task 5)')
 def test_english_has_exactly_the_source_texts():
     keys, en = source_keys(), set(dictionaries()['UI_EN'])
     assert sorted(keys - en) == [], 'missing from en.js'
